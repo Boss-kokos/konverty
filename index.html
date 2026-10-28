@@ -1,0 +1,1096 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Конверты">
+<meta name="theme-color" content="#0f9d63">
+<title>Конверты</title>
+<style>
+/* Layout: phone-shaped single-column app — stacked screens + bottom sheets, driven by state in localStorage */
+:root {
+  --bg-outer: #d9ddda;
+  --bg: #eef0ef;
+  --surface: #ffffff;
+  --surface-2: #f5f7f6;
+  --fg: #15201b;
+  --muted: #5c6763;
+  --faint: #939c97;
+  --border: #e2e5e3;
+  --accent: #0f9d63;
+  --accent-ink: #ffffff;
+  --good: #0f9d63;
+  --bad: #e5484d;
+  --shadow: 0 24px 60px -20px rgba(0,0,0,.28);
+
+  --font: "Golos Text", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-outer: #050807;
+    --bg: #0e1412;
+    --surface: #16201c;
+    --surface-2: #1d2824;
+    --fg: #eaf0ec;
+    --muted: #9aa5a0;
+    --faint: #67716c;
+    --border: #273530;
+    --accent: #2bd389;
+    --accent-ink: #05231a;
+    --good: #2bd389;
+    --bad: #ff6369;
+    --shadow: 0 24px 60px -20px rgba(0,0,0,.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-outer: #050807;
+  --bg: #0e1412;
+  --surface: #16201c;
+  --surface-2: #1d2824;
+  --fg: #eaf0ec;
+  --muted: #9aa5a0;
+  --faint: #67716c;
+  --border: #273530;
+  --accent: #2bd389;
+  --accent-ink: #05231a;
+  --good: #2bd389;
+  --bad: #ff6369;
+  --shadow: 0 24px 60px -20px rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg-outer);
+  color: var(--fg);
+  display: grid;
+  place-items: center;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font-family: inherit; color: inherit; }
+
+/* Phone column */
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 480px) {
+  body { padding: 24px; }
+  .app {
+    width: 420px;
+    height: min(100%, 880px);
+    border-radius: 38px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  transition: transform .28s cubic-bezier(.3,.8,.3,1);
+}
+.screen.push { transform: translateX(100%); box-shadow: -12px 0 40px -20px rgba(0,0,0,.4); }
+.screen.push.open { transform: translateX(0); }
+
+/* Scroll area */
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 max(16px, env(safe-area-inset-left,0px)) 24px max(16px, env(safe-area-inset-right,0px));
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Header */
+.hdr {
+  padding: calc(14px + env(safe-area-inset-top,0px)) max(16px, env(safe-area-inset-left,0px)) 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.hdr h1 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.hdr .spacer { flex: 1; }
+.iconbtn {
+  width: 38px; height: 38px;
+  border: none; background: var(--surface-2);
+  border-radius: 50%;
+  display: grid; place-items: center;
+  cursor: pointer; font-size: 17px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.iconbtn:active { transform: scale(.92); }
+.backbtn {
+  border: none; background: none; color: var(--accent);
+  font-size: 16px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 3px; padding: 4px 0;
+}
+.dtitle { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; margin-left: 8px; }
+
+/* Week nav */
+.weeknav {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 14px;
+}
+.weeknav button {
+  width: 40px; height: 40px; border: none;
+  background: var(--surface); border-radius: 12px;
+  font-size: 18px; cursor: pointer; color: var(--fg);
+  border: 1px solid var(--border);
+}
+.weeknav button:disabled { opacity: .35; cursor: default; }
+.weeknav .wk { flex: 1; text-align: center; }
+.weeknav .wk small { display: block; font-size: 11px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.weeknav .wk span { font-size: 16px; font-weight: 600; }
+
+/* Summary */
+.summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px 18px;
+  display: flex; align-items: center; gap: 16px;
+  margin-bottom: 18px;
+}
+.summary .label { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.summary .amt { font-family: var(--mono); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.summary .neg { color: var(--bad); }
+.summary .count { margin-left: auto; text-align: right; }
+.summary .count .n { font-size: 26px; font-weight: 700; }
+
+/* Envelope grid */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.card {
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--env) 30%, transparent);
+  background: color-mix(in srgb, var(--env) 11%, var(--surface));
+  border-radius: 18px;
+  padding: 13px;
+  cursor: pointer;
+  display: flex; flex-direction: column; gap: 7px;
+  min-width: 0;
+}
+.card:active { transform: scale(.975); }
+.card .toprow { display: flex; align-items: center; justify-content: space-between; }
+.env-emoji {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: color-mix(in srgb, var(--env) 22%, var(--surface));
+  display: grid; place-items: center; font-size: 21px;
+}
+.badge-closed { font-size: 10px; color: var(--muted); background: var(--surface-2); padding: 2px 7px; border-radius: 20px; font-weight: 600; }
+.holder-line { font-size: 11.5px; color: #c2820b; display: flex; align-items: center; gap: 4px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .holder-line { color: #f0b429; } }
+:root[data-theme="dark"] .holder-line { color: #f0b429; }
+.holder-chip { margin: 14px auto 0; width: fit-content; display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--fg); border-radius: 22px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.holder-chip:active { transform: scale(.96); }
+.people-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.pchip { border: 1px solid var(--border); background: var(--surface-2); border-radius: 18px; padding: 7px 13px; font-size: 14px; cursor: pointer; color: var(--fg); }
+.pchip:active { transform: scale(.95); }
+.card .nm { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .bal { font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.card .bal.neg { color: var(--bad); }
+.card .empty { color: var(--faint); font-size: 14px; }
+.card .act { border-top: 1px dashed color-mix(in srgb, var(--env) 30%, transparent); padding-top: 6px; display: flex; gap: 5px; align-items: center; color: var(--muted); font-size: 11px; font-family: var(--mono); }
+
+/* Empty state */
+.emptystate { text-align: center; color: var(--faint); padding: 56px 20px; }
+.emptystate .big { font-size: 44px; }
+.emptystate h3 { color: var(--muted); margin: 14px 0 4px; font-size: 16px; }
+.emptystate p { margin: 0; font-size: 14px; }
+
+/* FAB */
+.fab {
+  position: absolute; right: 18px; bottom: calc(82px + env(safe-area-inset-bottom,0px));
+  width: 58px; height: 58px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  border: none; font-size: 28px; cursor: pointer;
+  box-shadow: 0 10px 24px -6px color-mix(in srgb, var(--accent) 60%, transparent);
+  display: grid; place-items: center; z-index: 20;
+}
+.fab:active { transform: scale(.9); }
+
+/* Tab bar */
+.tabbar {
+  flex-shrink: 0;
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(12px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tabbar button {
+  flex: 1; border: none; background: none; cursor: pointer;
+  padding: 9px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  color: var(--faint); font-size: 10.5px; font-weight: 600;
+}
+.tabbar button .ti { font-size: 20px; }
+.tabbar button.active { color: var(--accent); }
+
+/* Detail */
+.detail-head {
+  text-align: center; padding: 10px 16px 18px;
+}
+.detail-head .big-emoji {
+  width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 14px;
+  display: grid; place-items: center; font-size: 34px;
+  background: color-mix(in srgb, var(--env) 20%, var(--surface));
+}
+.detail-head .bals { display: flex; justify-content: center; gap: 30px; }
+.detail-head .bals .lbl { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.detail-head .bals .v { font-family: var(--mono); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.detail-head .bals .v.neg { color: var(--bad); }
+
+.actions3 { display: flex; gap: 10px; margin-bottom: 20px; }
+.actions3 button {
+  flex: 1; border: none; cursor: pointer; border-radius: 14px;
+  padding: 13px 4px; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600;
+}
+.actions3 .add { background: color-mix(in srgb, var(--good) 14%, var(--surface)); color: var(--good); }
+.actions3 .take { background: color-mix(in srgb, var(--bad) 13%, var(--surface)); color: var(--bad); }
+.actions3 .move { background: color-mix(in srgb, #3b82f6 14%, var(--surface)); color: #3b82f6; }
+.actions3 button .em { font-size: 19px; }
+.actions3 button:active { transform: scale(.96); }
+
+.sec-title { font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; margin: 0 0 8px 2px; }
+
+.txlist { display: flex; flex-direction: column; gap: 2px; }
+.tx {
+  display: flex; align-items: center; gap: 11px;
+  padding: 11px 6px; border-bottom: 1px solid var(--border);
+}
+.tx .ic { font-size: 20px; width: 24px; text-align: center; flex-shrink: 0; }
+.tx .ic.pos { color: var(--good); }
+.tx .ic.neg { color: var(--bad); }
+.tx .mid { flex: 1; min-width: 0; }
+.tx .mid .t1 { font-size: 14px; font-weight: 600; }
+.tx .mid .t1 .rel { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+.tx .mid .note { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx .mid .date { font-size: 11.5px; color: var(--faint); font-family: var(--mono); }
+.tx .amt { font-family: var(--mono); font-weight: 600; font-size: 14.5px; font-variant-numeric: tabular-nums; }
+.tx .amt.pos { color: var(--good); }
+.tx .amt.neg { color: var(--bad); }
+.tx .del { border: none; background: none; color: var(--faint); cursor: pointer; font-size: 15px; padding: 4px; opacity: .5; }
+.tx .del:hover { opacity: 1; color: var(--bad); }
+.tx-empty { color: var(--faint); text-align: center; padding: 28px; font-size: 14px; }
+
+/* Sheets */
+.sheet-scrim {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(0,0,0,.4);
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+  display: flex; align-items: flex-end;
+}
+.sheet-scrim.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  width: 100%; background: var(--surface);
+  border-radius: 24px 24px 0 0;
+  padding: 10px 18px calc(20px + env(safe-area-inset-bottom,0px));
+  transform: translateY(100%); transition: transform .28s cubic-bezier(.3,.8,.3,1);
+  max-height: 92%; overflow-y: auto;
+}
+.sheet-scrim.open .sheet { transform: translateY(0); }
+.sheet .grabber { width: 38px; height: 4px; border-radius: 3px; background: var(--border); margin: 2px auto 14px; }
+.sheet h2 { font-size: 18px; margin: 0 0 16px; text-align: center; }
+
+.field { margin-bottom: 16px; }
+.field > label { display: block; font-size: 12px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin-bottom: 7px; }
+.input, select.input {
+  width: 100%; border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 12px; padding: 12px 14px; font-size: 16px; color: var(--fg);
+  font-family: inherit;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+.input.big { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+
+.pickgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.pickgrid .opt {
+  aspect-ratio: 1; border: 2px solid transparent; background: var(--surface-2);
+  border-radius: 12px; display: grid; place-items: center; font-size: 21px; cursor: pointer;
+}
+.pickgrid .opt.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--surface-2)); }
+.colorgrid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; }
+.colorgrid .dot { aspect-ratio: 1; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
+.colorgrid .dot.sel { border-color: var(--fg); }
+
+.curseg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; }
+.curseg button { border: none; background: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; color: var(--muted); }
+.curseg button.sel { background: var(--accent); color: var(--accent-ink); }
+.amt-row { display: flex; gap: 10px; align-items: center; }
+.amt-row .input.big { flex: 1; }
+
+.money2 { display: flex; gap: 10px; }
+.money2 .m { flex: 1; }
+.money2 .m .pfx { font-family: var(--mono); color: var(--faint); font-size: 18px; margin-right: 6px; }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 2px; margin-bottom: 8px; }
+.toggle-row span { font-size: 15px; }
+.sw { width: 50px; height: 30px; border-radius: 16px; background: var(--border); border: none; position: relative; cursor: pointer; transition: background .2s; flex-shrink: 0; }
+.sw.on { background: var(--accent); }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.sw.on::after { transform: translateX(20px); }
+
+.from-chip { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; font-weight: 600; }
+
+.btn-primary {
+  width: 100%; border: none; background: var(--accent); color: var(--accent-ink);
+  border-radius: 13px; padding: 15px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 4px;
+}
+.btn-primary:disabled { opacity: .4; cursor: default; }
+.btn-primary:active:not(:disabled) { transform: scale(.98); }
+.btn-ghost { width: 100%; border: none; background: none; color: var(--muted); padding: 12px; font-size: 15px; cursor: pointer; margin-top: 4px; }
+
+/* Segmented filter */
+.seg {
+  display: flex; background: var(--surface-2); border-radius: 11px; padding: 3px; margin: 2px 0 16px;
+}
+.seg button { flex: 1; border: none; background: none; padding: 9px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); cursor: pointer; }
+.seg button.sel { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+
+/* All-envelopes list */
+.elist { display: flex; flex-direction: column; gap: 10px; }
+.erow {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 12px 14px;
+  text-align: left; width: 100%;
+}
+.erow:active { transform: scale(.985); }
+.erow .mid { flex: 1; min-width: 0; }
+.erow .mid .nm { font-size: 15px; font-weight: 600; }
+.erow .mid .bal { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.erow .cnt { font-size: 12px; color: var(--faint); font-family: var(--mono); flex-shrink: 0; }
+
+.menu-pop {
+  position: absolute; top: calc(56px + env(safe-area-inset-top,0px)); right: 16px; z-index: 30;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow); overflow: hidden; min-width: 200px;
+  display: none;
+}
+.menu-pop.open { display: block; }
+.menu-pop button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 13px 16px; font-size: 15px; cursor: pointer; color: var(--fg); }
+.menu-pop button:hover { background: var(--surface-2); }
+.menu-pop button.danger { color: var(--bad); }
+
+.hint {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 13px; padding: 11px 13px; font-size: 13px; color: var(--muted);
+  display: flex; gap: 9px; align-items: flex-start; margin-bottom: 16px;
+}
+.hint b { color: var(--fg); font-weight: 600; }
+.hint .x { margin-left: auto; border: none; background: none; cursor: pointer; color: var(--faint); font-size: 16px; flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Spline+Sans+Mono:wght@500;600&display=swap">
+
+<script>
+// App icon + PWA manifest injected at runtime (keeps everything in one file)
+(function () {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180">'
+    + '<rect width="180" height="180" rx="40" fill="#0f9d63"/>'
+    + '<rect x="38" y="56" width="104" height="72" rx="12" fill="#ffffff"/>'
+    + '<path d="M38 68 L90 104 L142 68" fill="none" stroke="#0f9d63" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<text x="90" y="152" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#ffffff" text-anchor="middle">$ UAH</text>'
+    + '</svg>';
+  var icon = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+
+  var apple = document.createElement('link');
+  apple.rel = 'apple-touch-icon';
+  apple.href = icon;
+  document.head.appendChild(apple);
+
+  var fav = document.createElement('link');
+  fav.rel = 'icon';
+  fav.href = icon;
+  document.head.appendChild(fav);
+
+  try {
+    var manifest = {
+      name: "Конверты", short_name: "Конверты",
+      start_url: ".", scope: ".", display: "standalone",
+      background_color: "#0e1412", theme_color: "#0f9d63",
+      icons: [{ src: icon, sizes: "any", type: "image/svg+xml" }]
+    };
+    var blob = new Blob([JSON.stringify(manifest)], { type: "application/manifest+json" });
+    var mlink = document.createElement('link');
+    mlink.rel = 'manifest';
+    mlink.href = URL.createObjectURL(blob);
+    document.head.appendChild(mlink);
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- WEEK SCREEN -->
+  <section class="screen" data-screen="week">
+    <div class="hdr">
+      <h1>Конверты</h1>
+      <div class="spacer"></div>
+      <button class="iconbtn" id="menuBtn" aria-label="Меню">⋯</button>
+    </div>
+    <div class="menu-pop" id="menuPop">
+      <button id="themeToggle">Сменить тему</button>
+      <button id="loadDemo">Загрузить примеры</button>
+      <button class="danger" id="clearAll">Очистить все данные</button>
+    </div>
+    <div class="scroll" id="weekScroll"></div>
+    <button class="fab" id="fab" aria-label="Новый конверт">+</button>
+    <nav class="tabbar">
+      <button class="active" data-tab="week"><span class="ti">🗓️</span>Неделя</button>
+      <button data-tab="all"><span class="ti">🗂️</span>Конверты</button>
+    </nav>
+  </section>
+
+  <!-- ALL ENVELOPES SCREEN -->
+  <section class="screen" data-screen="all" hidden>
+    <div class="hdr"><h1>Все конверты</h1></div>
+    <div class="scroll" id="allScroll"></div>
+    <button class="fab" id="fab2" aria-label="Новый конверт">+</button>
+    <nav class="tabbar">
+      <button data-tab="week"><span class="ti">🗓️</span>Неделя</button>
+      <button class="active" data-tab="all"><span class="ti">🗂️</span>Конверты</button>
+    </nav>
+  </section>
+
+  <!-- DETAIL SCREEN -->
+  <section class="screen push" data-screen="detail" id="detailScreen" hidden>
+    <div class="hdr">
+      <button class="backbtn" id="detailBack">‹ Назад</button>
+      <div class="dtitle" id="detailTitle"></div>
+      <div class="spacer"></div>
+      <button class="iconbtn" id="detailMenu" aria-label="Меню конверта">⋯</button>
+    </div>
+    <div class="menu-pop" id="detailMenuPop"></div>
+    <div class="scroll" id="detailScroll"></div>
+  </section>
+
+  <!-- SHEETS -->
+  <div class="sheet-scrim" id="scrim">
+    <div class="sheet" id="sheet"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---------- Icons & colors ----------
+const ICONS = ["✉️","💵","💰","🏢","🚗","🍴","🏠","🎁","⚠️","💼","🛒","🔧","📱","✈️","❤️","⭐","💳","🩺","📚","🎮"];
+const COLORS = ["#3b82f6","#22c55e","#e5484d","#f59e0b","#a855f7","#ec4899","#14b8a6","#6366f1","#a1764f","#2dd4bf"];
+const MONTHS = ["янв","фев","мар","апр","мая","июн","июл","авг","сен","окт","ноя","дек"];
+
+// ---------- State ----------
+const KEY = "konverty.v1";
+let state = { envelopes: [] };
+let ui = { tab: "week", weekStart: startOfWeek(new Date()), detailId: null };
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) { state = JSON.parse(raw); return true; }
+  } catch (e) {}
+  return false;
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+}
+function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+
+// ---------- Date helpers (week = Mon..Sun) ----------
+function startOfWeek(d) {
+  const x = new Date(d);
+  x.setHours(0,0,0,0);
+  const day = (x.getDay() + 6) % 7; // Mon=0
+  x.setDate(x.getDate() - day);
+  return x.getTime();
+}
+function endOfWeek(ms) {
+  const x = new Date(ms);
+  x.setDate(x.getDate() + 6);
+  x.setHours(23,59,59,999);
+  return x.getTime();
+}
+function weekString(ms) {
+  const a = new Date(ms), b = new Date(endOfWeek(ms));
+  return `${a.getDate()} ${MONTHS[a.getMonth()]} — ${b.getDate()} ${MONTHS[b.getMonth()]}`;
+}
+function isCurrentWeek(ms) { return ms === startOfWeek(new Date()); }
+function fmtDate(ts) {
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2,"0");
+  const mm = String(d.getMinutes()).padStart(2,"0");
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}, ${hh}:${mm}`;
+}
+
+// ---------- Money ----------
+function sym(c) { return c === "UAH" ? "₴" : "$"; }
+function nice(v) {
+  const a = Math.abs(v);
+  return (a % 1 === 0) ? String(a) : a.toFixed(2);
+}
+function fmt(v, c) { return sym(c) + nice(v); }
+function fmtSigned(v, c) { return (v >= 0 ? "+" : "−") + sym(c) + nice(v); }
+
+function signed(tx) {
+  const pos = tx.kind === "income" || tx.kind === "transfer_in";
+  return pos ? tx.amount : -tx.amount;
+}
+function balance(env, cur) {
+  return env.transactions.filter(t => t.currency === cur).reduce((s,t) => s + signed(t), 0);
+}
+function isActive(env) { return !env.closedAt; }
+
+// ---------- Mutations ----------
+function createEnvelope(name, icon, color, usd, uah) {
+  const env = { id: uid(), name, icon, color, createdAt: Date.now(), closedAt: null, holder: null, transactions: [] };
+  if (usd > 0) env.transactions.push(tx(usd, "USD", "income", "Начальная сумма"));
+  if (uah > 0) env.transactions.push(tx(uah, "UAH", "income", "Начальная сумма"));
+  state.envelopes.unshift(env);
+  save();
+}
+function tx(amount, currency, kind, note, rel, tid) {
+  return { id: uid(), amount: Math.abs(amount), currency, kind, note: note || "", date: Date.now(), relatedEnvelopeName: rel || null, transferId: tid || null };
+}
+function addTx(env, amount, currency, isExpense, note) {
+  env.transactions.push(tx(amount, currency, isExpense ? "expense" : "income", note));
+  save();
+}
+function doTransfer(from, toId, fromAmt, fromCur, toAmt, toCur, note) {
+  const to = state.envelopes.find(e => e.id === toId);
+  if (!to) return;
+  const tid = uid();
+  from.transactions.push(tx(fromAmt, fromCur, "transfer_out", note, to.name, tid));
+  to.transactions.push(tx(toAmt, toCur, "transfer_in", note, from.name, tid));
+  save();
+}
+function handEntry(kind, person, note) {
+  return { id: uid(), amount: 0, currency: "USD", kind, note: note || "", date: Date.now(), person: person || null, relatedEnvelopeName: null, transferId: null };
+}
+function rememberPerson(p) {
+  if (!state.people) state.people = [];
+  p = (p || "").trim();
+  if (!p) return;
+  state.people = [p, ...state.people.filter(x => x !== p)].slice(0, 8);
+}
+function handOver(env, person, note) {
+  env.holder = person;
+  env.transactions.push(handEntry("handover_out", person, note));
+  rememberPerson(person);
+  save();
+}
+function returnToMe(env, note) {
+  env.transactions.push(handEntry("handover_in", null, note));
+  env.holder = null;
+  save();
+}
+function deleteTx(env, txId) {
+  env.transactions = env.transactions.filter(t => t.id !== txId);
+  save();
+}
+
+// ---------- Rendering ----------
+const $ = sel => document.querySelector(sel);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function balHTML(env, big) {
+  const u = balance(env, "USD"), g = balance(env, "UAH");
+  const cls = big ? "bal" : "bal";
+  if (u === 0 && g === 0) return `<div class="empty">Пусто</div>`;
+  let h = "";
+  if (u !== 0) h += `<div class="${cls} ${u<0?'neg':''}">${fmt(u,"USD")}</div>`;
+  if (g !== 0) h += `<div class="${cls} ${g<0?'neg':''}">${fmt(g,"UAH")}</div>`;
+  return h;
+}
+
+function renderWeek() {
+  const ws = ui.weekStart, we = endOfWeek(ws);
+  const list = state.envelopes.filter(e =>
+    e.createdAt <= we && (!e.closedAt || e.closedAt >= ws)
+  );
+  let totU = 0, totG = 0;
+  list.forEach(e => { totU += balance(e,"USD"); totG += balance(e,"UAH"); });
+
+  const showHint = state.envelopes.length > 0 && localStorage.getItem("konverty.hint") !== "0";
+
+  let cards = "";
+  if (list.length === 0) {
+    cards = `<div class="emptystate"><div class="big">✉️</div><h3>Нет конвертов</h3><p>Нажми + чтобы добавить</p></div>`;
+  } else {
+    cards = `<div class="grid">` + list.map(e => {
+      const weekTx = e.transactions.filter(t => t.date >= ws && t.date <= we);
+      const au = weekTx.filter(t=>t.currency==="USD").reduce((s,t)=>s+signed(t),0);
+      const ag = weekTx.filter(t=>t.currency==="UAH").reduce((s,t)=>s+signed(t),0);
+      let act = "";
+      if (au !== 0 || ag !== 0) {
+        act = `<div class="act">⇄ ${[au!==0?fmtSigned(au,"USD"):null, ag!==0?fmtSigned(ag,"UAH"):null].filter(Boolean).join(" · ")}</div>`;
+      }
+      return `<button class="card" style="--env:${e.color}" data-env="${e.id}">
+        <div class="toprow"><div class="env-emoji">${e.icon}</div>${isActive(e)?"":'<span class="badge-closed">Закрыт</span>'}</div>
+        <div class="nm">${esc(e.name)}</div>
+        ${e.holder?`<div class="holder-line">🫱 У ${esc(e.holder)}</div>`:""}
+        <div>${balHTML(e)}</div>
+        ${act}
+      </button>`;
+    }).join("") + `</div>`;
+  }
+
+  $("#weekScroll").innerHTML = `
+    ${showHint ? `<div class="hint"><span>💡</span><div><b>Это примеры.</b> Поиграйся с ними, а когда захочешь начать по-настоящему — «Очистить все данные» в меню (⋯).</div><button class="x" id="hintX">✕</button></div>` : ""}
+    <div class="weeknav">
+      <button id="wkPrev">‹</button>
+      <div class="wk">${isCurrentWeek(ws)?'<small>Текущая неделя</small>':''}<span>${weekString(ws)}</span></div>
+      <button id="wkNext" ${isCurrentWeek(ws)?"disabled":""}>›</button>
+    </div>
+    <div class="summary">
+      <div>
+        <div class="label">Итого</div>
+        ${(totU!==0||totG!==0) ? `${totU!==0?`<div class="amt ${totU<0?'neg':''}">${fmt(totU,"USD")}</div>`:""}${totG!==0?`<div class="amt ${totG<0?'neg':''}">${fmt(totG,"UAH")}</div>`:""}` : `<div class="amt">—</div>`}
+      </div>
+      <div class="count"><div class="label">Конвертов</div><div class="n">${list.length}</div></div>
+    </div>
+    ${cards}
+  `;
+}
+
+function renderAll() {
+  const active = state.envelopes.filter(isActive);
+  const closed = state.envelopes.filter(e => !isActive(e));
+  const showActive = ui.allFilter !== "closed";
+  const list = showActive ? active : closed;
+
+  let body;
+  if (list.length === 0) {
+    body = `<div class="emptystate"><div class="big">${showActive?"✉️":"📦"}</div><h3>${showActive?"Нет открытых конвертов":"Нет закрытых конвертов"}</h3></div>`;
+  } else {
+    body = `<div class="elist">` + list.map(e => `
+      <button class="erow" data-env="${e.id}">
+        <div class="env-emoji" style="background:color-mix(in srgb, ${e.color} 22%, var(--surface))">${e.icon}</div>
+        <div class="mid"><div class="nm">${esc(e.name)}</div><div class="bal">${balLine(e)}</div>${e.holder?`<div class="holder-line">🫱 У ${esc(e.holder)}</div>`:""}</div>
+        <div class="cnt">${e.transactions.length} опер.</div>
+      </button>`).join("") + `</div>`;
+  }
+
+  $("#allScroll").innerHTML = `
+    <div class="seg">
+      <button class="${showActive?"sel":""}" data-filter="active">Открытые</button>
+      <button class="${!showActive?"sel":""}" data-filter="closed">Закрытые</button>
+    </div>${body}`;
+}
+function balLine(e) {
+  const u = balance(e,"USD"), g = balance(e,"UAH");
+  if (u===0 && g===0) return "Пусто";
+  return [u!==0?fmt(u,"USD"):null, g!==0?fmt(g,"UAH"):null].filter(Boolean).join("  ");
+}
+
+function renderDetail() {
+  const e = state.envelopes.find(x => x.id === ui.detailId);
+  if (!e) return;
+  const u = balance(e,"USD"), g = balance(e,"UAH");
+  const txs = [...e.transactions].sort((a,b) => b.date - a.date);
+  const kindIcon = { income:"⊕", expense:"⊖", transfer_in:"⬇", transfer_out:"⬆" };
+  const kindLabel = { income:"Добавлено", expense:"Забрано", transfer_in:"Получено", transfer_out:"Переведено" };
+
+  const actions = isActive(e) ? `
+    <div class="actions3">
+      <button class="add" data-act="add"><span class="em">⊕</span>Добавить</button>
+      <button class="take" data-act="take"><span class="em">⊖</span>Забрать</button>
+      <button class="move" data-act="transfer"><span class="em">⇄</span>Перевести</button>
+    </div>` : `<div class="hint" style="margin-top:4px"><span>📦</span><div>Конверт закрыт. Открой заново в меню (⋯), чтобы добавлять операции.</div></div>`;
+
+  const history = txs.length === 0 ? `<div class="tx-empty">Пока нет операций</div>` :
+    txs.map(t => {
+      if (t.kind === "handover_out" || t.kind === "handover_in") {
+        const label = t.kind === "handover_out"
+          ? `Передан${t.person ? " — " + esc(t.person) : ""}`
+          : "Вернулся ко мне";
+        return `<div class="tx handover">
+          <div class="ic">🫱</div>
+          <div class="mid">
+            <div class="t1">${label}</div>
+            ${t.note?`<div class="note">${esc(t.note)}</div>`:""}
+            <div class="date">${fmtDate(t.date)}</div>
+          </div>
+          <button class="del" data-del="${t.id}" aria-label="Удалить">🗑</button>
+        </div>`;
+      }
+      const pos = t.kind==="income" || t.kind==="transfer_in";
+      const rel = t.relatedEnvelopeName ? `<span class="rel">${t.kind==="transfer_in"?"← ":"→ "}${esc(t.relatedEnvelopeName)}</span>` : "";
+      return `<div class="tx">
+        <div class="ic ${pos?'pos':'neg'}">${kindIcon[t.kind]}</div>
+        <div class="mid">
+          <div class="t1">${kindLabel[t.kind]} ${rel}</div>
+          ${t.note?`<div class="note">${esc(t.note)}</div>`:""}
+          <div class="date">${fmtDate(t.date)}</div>
+        </div>
+        <div class="amt ${pos?'pos':'neg'}">${fmtSigned(signed(t), t.currency)}</div>
+        <button class="del" data-del="${t.id}" aria-label="Удалить">🗑</button>
+      </div>`;
+    }).join("");
+
+  $("#detailScroll").innerHTML = `
+    <div class="detail-head" style="--env:${e.color}">
+      <div class="big-emoji">${e.icon}</div>
+      <div class="bals">
+        ${(u!==0 || g===0) ? `<div><div class="lbl">Доллары</div><div class="v ${u<0?'neg':''}">${fmt(u,"USD")}</div></div>` : ""}
+        ${(g!==0 || u===0) ? `<div><div class="lbl">Гривны</div><div class="v ${g<0?'neg':''}">${fmt(g,"UAH")}</div></div>` : ""}
+      </div>
+      ${isActive(e)
+        ? `<button class="holder-chip" id="holderChip">${e.holder ? `🫱 У ${esc(e.holder)} · сменить` : "🖐 У меня · передать"}</button>`
+        : (e.holder ? `<div class="holder-chip" style="cursor:default">🫱 Был у ${esc(e.holder)}</div>` : "")}
+    </div>
+    ${actions}
+    <div class="sec-title">История</div>
+    <div class="txlist">${history}</div>`;
+
+  $("#detailTitle").textContent = e.name;
+  const pop = $("#detailMenuPop");
+  pop.innerHTML = isActive(e)
+    ? `<button class="danger" data-dact="close">Закрыть конверт</button>`
+    : `<button data-dact="reopen">Открыть снова</button>`;
+}
+
+// ---------- Navigation ----------
+function switchTab(tab) {
+  ui.tab = tab;
+  $('[data-screen="week"]').hidden = tab !== "week";
+  $('[data-screen="all"]').hidden = tab !== "all";
+  if (tab === "week") renderWeek(); else renderAll();
+}
+function openDetail(id) {
+  ui.detailId = id;
+  renderDetail();
+  const s = $("#detailScreen");
+  s.hidden = false;
+  requestAnimationFrame(() => s.classList.add("open"));
+}
+function closeDetail() {
+  const s = $("#detailScreen");
+  s.classList.remove("open");
+  setTimeout(() => { s.hidden = true; }, 300);
+  if (ui.tab === "week") renderWeek(); else renderAll();
+}
+
+// ---------- Sheets ----------
+function openSheet(html) {
+  $("#sheet").innerHTML = `<div class="grabber"></div>` + html;
+  $("#scrim").classList.add("open");
+}
+function closeSheet() { $("#scrim").classList.remove("open"); }
+
+function sheetAddEnvelope() {
+  let icon = ICONS[0], color = COLORS[0];
+  openSheet(`
+    <h2>Новый конверт</h2>
+    <div class="field"><label>Название</label><input class="input" id="envName" placeholder="ЗП, Штрафы, Расходы…" autocomplete="off"></div>
+    <div class="field"><label>Иконка</label><div class="pickgrid" id="iconGrid">${ICONS.map((i,n)=>`<div class="opt ${n===0?'sel':''}" data-icon="${i}">${i}</div>`).join("")}</div></div>
+    <div class="field"><label>Цвет</label><div class="colorgrid" id="colorGrid">${COLORS.map((c,n)=>`<div class="dot ${n===0?'sel':''}" style="background:${c}" data-color="${c}"></div>`).join("")}</div></div>
+    <div class="field"><label>Начальная сумма (необязательно)</label>
+      <div class="money2">
+        <div class="m"><span class="pfx">$</span><input class="input" id="initUsd" inputmode="decimal" placeholder="0" style="width:calc(100% - 22px);display:inline-block"></div>
+        <div class="m"><span class="pfx">₴</span><input class="input" id="initUah" inputmode="decimal" placeholder="0" style="width:calc(100% - 22px);display:inline-block"></div>
+      </div>
+    </div>
+    <button class="btn-primary" id="createBtn" disabled>Создать</button>
+    <button class="btn-ghost" data-close>Отмена</button>
+  `);
+  const nameEl = $("#envName"), btn = $("#createBtn");
+  nameEl.addEventListener("input", () => btn.disabled = !nameEl.value.trim());
+  $("#iconGrid").addEventListener("click", ev => {
+    const o = ev.target.closest("[data-icon]"); if (!o) return;
+    icon = o.dataset.icon;
+    $("#iconGrid").querySelectorAll(".opt").forEach(x=>x.classList.remove("sel"));
+    o.classList.add("sel");
+  });
+  $("#colorGrid").addEventListener("click", ev => {
+    const o = ev.target.closest("[data-color]"); if (!o) return;
+    color = o.dataset.color;
+    $("#colorGrid").querySelectorAll(".dot").forEach(x=>x.classList.remove("sel"));
+    o.classList.add("sel");
+  });
+  btn.addEventListener("click", () => {
+    const u = parseFloat(($("#initUsd").value||"").replace(",",".")) || 0;
+    const g = parseFloat(($("#initUah").value||"").replace(",",".")) || 0;
+    createEnvelope(nameEl.value.trim(), icon, color, u, g);
+    closeSheet();
+    switchTab(ui.tab);
+  });
+  setTimeout(()=>nameEl.focus(), 320);
+}
+
+function sheetTransaction(env, isExpense) {
+  let cur = "USD";
+  openSheet(`
+    <h2>${isExpense?"Забрать":"Добавить"}</h2>
+    <div class="from-chip"><span>${env.icon}</span><span>${isExpense?"Забрать из":"Добавить в"}: ${esc(env.name)}</span></div>
+    <div class="field"><label>Сумма</label>
+      <div class="amt-row">
+        <input class="input big" id="txAmt" inputmode="decimal" placeholder="0">
+        <div class="curseg" id="txCur"><button class="sel" data-cur="USD">$</button><button data-cur="UAH">₴</button></div>
+      </div>
+    </div>
+    <div class="field"><label>Заметка</label><input class="input" id="txNote" placeholder="Что и зачем" autocomplete="off"></div>
+    <button class="btn-primary" id="saveTx" disabled>Сохранить</button>
+    <button class="btn-ghost" data-close>Отмена</button>
+  `);
+  const amt = $("#txAmt"), btn = $("#saveTx");
+  const chk = () => btn.disabled = !(parseFloat((amt.value||"").replace(",","."))>0);
+  amt.addEventListener("input", chk);
+  $("#txCur").addEventListener("click", ev => {
+    const b = ev.target.closest("[data-cur]"); if (!b) return;
+    cur = b.dataset.cur;
+    $("#txCur").querySelectorAll("button").forEach(x=>x.classList.remove("sel"));
+    b.classList.add("sel");
+  });
+  btn.addEventListener("click", () => {
+    const v = parseFloat((amt.value||"").replace(",","."));
+    addTx(env, v, cur, isExpense, $("#txNote").value.trim());
+    closeSheet(); renderDetail();
+  });
+  setTimeout(()=>amt.focus(), 320);
+}
+
+function sheetTransfer(from) {
+  let fromCur = "USD", toCur = "USD", same = true, toId = "";
+  const avail = state.envelopes.filter(e => e.id !== from.id && isActive(e));
+  openSheet(`
+    <h2>Перевод</h2>
+    <div class="from-chip"><span>${from.icon}</span><span>Откуда: ${esc(from.name)}</span></div>
+    <div class="field"><label>Сумма</label>
+      <div class="amt-row">
+        <input class="input big" id="fAmt" inputmode="decimal" placeholder="0">
+        <div class="curseg" id="fCur"><button class="sel" data-cur="USD">$</button><button data-cur="UAH">₴</button></div>
+      </div>
+    </div>
+    <div class="toggle-row"><span>Та же сумма и валюта</span><button class="sw on" id="sameSw" role="switch" aria-checked="true"></button></div>
+    <div class="field"><label>Куда</label>
+      ${avail.length===0 ? `<div class="from-chip" style="color:var(--muted)">Нет других открытых конвертов</div>`
+        : `<select class="input" id="toSel"><option value="">Выбери конверт</option>${avail.map(e=>`<option value="${e.id}">${e.icon} ${esc(e.name)}</option>`).join("")}</select>`}
+    </div>
+    <div class="field" id="toAmtField" hidden>
+      <label>Сколько положить</label>
+      <div class="amt-row">
+        <input class="input big" id="tAmt" inputmode="decimal" placeholder="0">
+        <div class="curseg" id="tCur"><button class="sel" data-cur="USD">$</button><button data-cur="UAH">₴</button></div>
+      </div>
+    </div>
+    <div class="field"><label>Заметка</label><input class="input" id="trNote" placeholder="Зачем перевод" autocomplete="off"></div>
+    <button class="btn-primary" id="doTransfer" disabled>Перевести</button>
+    <button class="btn-ghost" data-close>Отмена</button>
+  `);
+  const fAmt = $("#fAmt"), btn = $("#doTransfer"), sel = $("#toSel");
+  function chk() {
+    const fv = parseFloat((fAmt.value||"").replace(",","."));
+    let ok = fv > 0 && toId;
+    if (!same) { const tv = parseFloat(($("#tAmt").value||"").replace(",",".")); ok = ok && tv > 0; }
+    btn.disabled = !ok;
+  }
+  fAmt.addEventListener("input", chk);
+  if (sel) sel.addEventListener("change", () => { toId = sel.value; chk(); });
+  $("#fCur").addEventListener("click", ev => { const b=ev.target.closest("[data-cur]"); if(!b)return; fromCur=b.dataset.cur; $("#fCur").querySelectorAll("button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); });
+  $("#tCur").addEventListener("click", ev => { const b=ev.target.closest("[data-cur]"); if(!b)return; toCur=b.dataset.cur; $("#tCur").querySelectorAll("button").forEach(x=>x.classList.remove("sel")); b.classList.add("sel"); });
+  $("#sameSw").addEventListener("click", () => {
+    same = !same;
+    $("#sameSw").classList.toggle("on", same);
+    $("#sameSw").setAttribute("aria-checked", same);
+    $("#toAmtField").hidden = same;
+    if (!same) $("#tAmt").addEventListener("input", chk, { once:false });
+    chk();
+  });
+  btn.addEventListener("click", () => {
+    const fv = parseFloat((fAmt.value||"").replace(",","."));
+    let tv = fv, tc = fromCur;
+    if (!same) { tv = parseFloat(($("#tAmt").value||"").replace(",",".")); tc = toCur; }
+    doTransfer(from, toId, fv, fromCur, tv, tc, $("#trNote").value.trim());
+    closeSheet(); renderDetail();
+  });
+}
+
+function sheetHandover(env) {
+  if (!env) return;
+  const people = state.people || [];
+  openSheet(`
+    <h2>${env.holder ? "Сменить, у кого конверт" : "Передать конверт"}</h2>
+    <div class="from-chip"><span>${env.icon}</span><span>${esc(env.name)}</span></div>
+    ${env.holder ? `<div class="hint"><span>🫱</span><div>Сейчас конверт у <b>${esc(env.holder)}</b>. Деньги внутри можно добавлять и забирать как обычно.</div></div>` : ""}
+    <div class="field"><label>Кому отдаёшь</label>
+      <input class="input" id="hPerson" placeholder="Имя" autocomplete="off">
+      ${people.length ? `<div class="people-chips" id="peopleChips">${people.map(p=>`<button class="pchip" data-person="${esc(p)}">${esc(p)}</button>`).join("")}</div>` : ""}
+    </div>
+    <div class="field"><label>Заметка</label><input class="input" id="hNote" placeholder="Напр.: до пятницы, на материалы" autocomplete="off"></div>
+    <button class="btn-primary" id="hGive" disabled>Передать</button>
+    ${env.holder ? `<button class="btn-ghost" id="hReturn">↩ Вернуть себе</button>` : `<button class="btn-ghost" data-close>Отмена</button>`}
+  `);
+  const inp = $("#hPerson"), btn = $("#hGive");
+  const chk = () => btn.disabled = !inp.value.trim();
+  inp.addEventListener("input", chk);
+  const chips = $("#peopleChips");
+  if (chips) chips.addEventListener("click", ev => {
+    const b = ev.target.closest("[data-person]"); if (!b) return;
+    inp.value = b.dataset.person; chk();
+  });
+  btn.addEventListener("click", () => {
+    handOver(env, inp.value.trim(), $("#hNote").value.trim());
+    closeSheet(); renderDetail();
+  });
+  const ret = $("#hReturn");
+  if (ret) ret.addEventListener("click", () => {
+    returnToMe(env, $("#hNote").value.trim());
+    closeSheet(); renderDetail();
+  });
+  setTimeout(() => inp.focus(), 320);
+}
+
+// ---------- Event wiring ----------
+document.addEventListener("click", ev => {
+  const t = ev.target;
+
+  const tab = t.closest("[data-tab]");
+  if (tab) { switchTab(tab.dataset.tab); return; }
+
+  const envBtn = t.closest("[data-env]");
+  if (envBtn) { openDetail(envBtn.dataset.env); return; }
+
+  if (t.id === "wkPrev") { ui.weekStart = startOfWeek(new Date(ui.weekStart - 7*864e5)); renderWeek(); return; }
+  if (t.id === "wkNext") { ui.weekStart = startOfWeek(new Date(ui.weekStart + 7*864e5)); renderWeek(); return; }
+
+  const flt = t.closest("[data-filter]");
+  if (flt) { ui.allFilter = flt.dataset.filter; renderAll(); return; }
+
+  if (t.id === "fab" || t.id === "fab2") { sheetAddEnvelope(); return; }
+
+  if (t.id === "detailBack") { closeDetail(); return; }
+
+  const act = t.closest("[data-act]");
+  if (act) {
+    const e = state.envelopes.find(x => x.id === ui.detailId);
+    if (act.dataset.act === "add") sheetTransaction(e, false);
+    if (act.dataset.act === "take") sheetTransaction(e, true);
+    if (act.dataset.act === "transfer") sheetTransfer(e);
+    return;
+  }
+
+  if (t.closest("#holderChip")) {
+    sheetHandover(state.envelopes.find(x => x.id === ui.detailId));
+    return;
+  }
+
+  const del = t.closest("[data-del]");
+  if (del) {
+    const e = state.envelopes.find(x => x.id === ui.detailId);
+    deleteTx(e, del.dataset.del);
+    renderDetail();
+    return;
+  }
+
+  if (t.id === "detailMenu") { $("#detailMenuPop").classList.toggle("open"); return; }
+  const dact = t.closest("[data-dact]");
+  if (dact) {
+    const e = state.envelopes.find(x => x.id === ui.detailId);
+    if (dact.dataset.dact === "close") e.closedAt = Date.now();
+    if (dact.dataset.dact === "reopen") e.closedAt = null;
+    save(); $("#detailMenuPop").classList.remove("open"); renderDetail();
+    return;
+  }
+
+  if (t.id === "menuBtn") { $("#menuPop").classList.toggle("open"); return; }
+  if (t.id === "themeToggle") {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const dark = cur === "dark" || (!cur && matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+    try { localStorage.setItem("konverty.theme", dark ? "light" : "dark"); } catch(e){}
+    $("#menuPop").classList.remove("open"); return;
+  }
+  if (t.id === "loadDemo") { seedDemo(); $("#menuPop").classList.remove("open"); switchTab("week"); return; }
+  if (t.id === "clearAll") {
+    state = { envelopes: [], people: [] }; save();
+    try { localStorage.setItem("konverty.hint","0"); } catch(e){}
+    $("#menuPop").classList.remove("open"); switchTab("week"); return;
+  }
+  if (t.id === "hintX") { try{localStorage.setItem("konverty.hint","0");}catch(e){} renderWeek(); return; }
+
+  if (t.hasAttribute("data-close") || t.id === "scrim") { closeSheet(); return; }
+
+  if (!t.closest("#menuPop") && t.id !== "menuBtn") $("#menuPop").classList.remove("open");
+  if (!t.closest("#detailMenuPop") && t.id !== "detailMenu") $("#detailMenuPop").classList.remove("open");
+});
+
+// ---------- Demo data ----------
+function seedDemo() {
+  const now = Date.now();
+  const mk = (name, icon, color, txs, closedAt=null) => ({
+    id: uid(), name, icon, color, createdAt: now - 6*864e5, closedAt, holder: null,
+    transactions: txs.map(x => ({ id: uid(), amount: x[0], currency: x[1], kind: x[2], note: x[3]||"", date: now - (x[4]||0)*864e5, relatedEnvelopeName: x[5]||null, transferId: null }))
+  });
+  state = { envelopes: [
+    mk("ЗП эта неделя", "💵", "#22c55e", [
+      [500, "USD", "income", "Конверт в пятницу", 2],
+      [3000, "UAH", "income", "Доплата", 1],
+      [120, "USD", "expense", "Продукты", 0],
+    ]),
+    mk("Штрафы", "⚠️", "#e5484d", [
+      [3000, "USD", "income", "В сейф на штрафы", 5],
+      [2600, "UAH", "income", "", 5],
+      [200, "USD", "transfer_out", "Разменял на обед", 1, "Расходы"],
+    ]),
+    mk("Расходы", "🛒", "#3b82f6", [
+      [8200, "UAH", "income", "Начальная сумма", 5],
+      [200, "USD", "transfer_in", "От Штрафы", 1, "Штрафы"],
+      [1500, "UAH", "expense", "Заправка", 0],
+    ]),
+    mk("Аренда (закрыт)", "🏠", "#a855f7", [
+      [600, "USD", "income", "", 20],
+      [600, "USD", "expense", "Отдал за квартиру", 18],
+    ], now - 15*864e5),
+  ]};
+  const held = state.envelopes.find(e => e.name === "Расходы");
+  if (held) {
+    held.holder = "Коля";
+    held.transactions.push({ id: uid(), amount: 0, currency: "USD", kind: "handover_out", note: "Поехал за материалами", person: "Коля", date: now - 864e5, relatedEnvelopeName: null, transferId: null });
+  }
+  state.people = ["Коля", "Оля", "Макс"];
+  save();
+  try { localStorage.setItem("konverty.hint","1"); } catch(e){}
+}
+
+// ---------- Boot ----------
+(function boot(){
+  try {
+    const th = localStorage.getItem("konverty.theme");
+    if (th) document.documentElement.setAttribute("data-theme", th);
+  } catch(e){}
+  const had = load();
+  if (!had || !state.envelopes) { seedDemo(); }
+  if (!state.people) state.people = [];
+  ui.weekStart = startOfWeek(new Date());
+  switchTab("week");
+})();
+</script>
+</body>
+</html>
